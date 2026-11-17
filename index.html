@@ -27,7 +27,7 @@ root.setAttribute('data-ts-access','pending');root.setAttribute('data-ts-role','
 <script type="module">
 import { initializeApp } from 'firebase/app';
 import { getAuth, initializeAuth, indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail } from 'firebase/auth';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache, doc, setDoc, getDoc, updateDoc, deleteDoc, collection, getDocs, onSnapshot, serverTimestamp, getDocFromServer, runTransaction } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache, doc, setDoc, getDoc, updateDoc, deleteDoc, collection, getDocs, onSnapshot, serverTimestamp, getDocFromServer, runTransaction, increment, arrayUnion } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: "AIzaSyDtP6EbyZweLk-KaKMF6ReeRLhU3l7AExU",
@@ -56,7 +56,7 @@ try{
     console.warn('Caché persistente no disponible, uso memoria:', e);
     dbfs = initializeFirestore(app, { ignoreUndefinedProperties:true, localCache: memoryLocalCache() });
   }
-  window.fb = { auth, dbfs, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail, doc, setDoc, getDoc, updateDoc, deleteDoc, collection, getDocs, onSnapshot, serverTimestamp, getDocFromServer, runTransaction };
+  window.fb = { auth, dbfs, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail, doc, setDoc, getDoc, updateDoc, deleteDoc, collection, getDocs, onSnapshot, serverTimestamp, getDocFromServer, runTransaction, increment, arrayUnion };
   console.log('[TallerSync] Firebase inicializado');
 }catch(err){
   console.error('[TallerSync] Error inicializando Firebase', err);
@@ -167,6 +167,7 @@ label{font-size:13px;color:var(--text2);font-weight:700;margin:8px 2px 6px;displ
   font-weight:700;font-size:13px;color:var(--text2);cursor:pointer;
 }
 .chip.active{background:rgba(255,122,24,.15);border-color:rgba(255,122,24,.4);color:#ffd7b8}
+.chips.chips-off{opacity:.4;pointer-events:none}
 .list{display:grid;gap:10px}
 .item{
   background:var(--card);border:1px solid var(--border);border-radius:16px;padding:14px;
@@ -482,6 +483,14 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:14px 0}
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2"/></svg>
         </button>
       </div>
+      <div class="search" style="margin-top:0">
+        <label for="filtroFecha" style="margin:0;white-space:nowrap">📅 Fecha de ingreso</label>
+        <input id="filtroFecha" class="input" type="date" title="Ver todos los coches que ingresaron ese día">
+        <button class="icon-btn" id="btnClearFecha" title="Quitar fecha" aria-label="Quitar fecha">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2"/></svg>
+        </button>
+      </div>
+      <div id="fechaInfo" class="small" style="display:none;margin:-4px 2px 8px"></div>
       <div class="chips" id="filtros">
         <button class="chip active" data-estado="Todos">Todos</button>
         <button class="chip" data-estado="Ingresado">Ingresado</button>
@@ -509,6 +518,9 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:14px 0}
   
  </div>
 </section>
+<section id="view-stock" class="view"><div class="section-title">Stock de repuestos</div><div id="stockMsg"></div><div class="cards" id="stockCards" style="margin-bottom:12px"></div><div id="stockAuto"></div>
+<div style="display:grid;gap:8px;margin-bottom:10px"><button type="button" class="btn btn-primary btn-block" id="btnStockNuevo" style="display:none">+ Nuevo repuesto</button><button type="button" class="btn btn-block" id="btnStockCompras" style="display:none">Copiar lista de compras</button></div>
+<input class="input" id="stockSearch" placeholder="Buscar por nombre, código, ubicación o proveedor" style="margin-bottom:10px"><div id="stockChips" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button type="button" class="chip active" data-f="todos">Todos</button><button type="button" class="chip" data-f="bajo">Bajo mínimo</button><button type="button" class="chip" data-f="cero">Sin stock</button></div><div class="list" id="stockList"></div></section>
 <section id="view-mis-trabajos" class="view"><div class="section-title">Mis trabajos</div><button type="button" class="btn btn-sm" onclick="renderMisTrabajos()">Actualizar</button><div id="misTrabajosResultado" style="margin-top:10px"></div></section></main>
 
   <button class="fab" id="fabNuevo" aria-label="Nuevo">
@@ -525,6 +537,7 @@ hr.sep{border:none;border-top:1px solid var(--border);margin:14px 0}
       Trabajos
     </button>
     <button class="nav-btn" data-view="vehiculos" style="display:none"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 10l2-6h12l2 6M3 10h18v8H3zM6 18v2M18 18v2M6 13h2M16 13h2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Vehículos</button><button class="nav-btn" data-view="mis-trabajos" style="display:none"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M8 4h8v4H8zM6 6H4v16h16V6h-2M8 12h8M8 16h8" stroke="currentColor" stroke-width="2"/></svg>Mis trabajos</button>
+    <button class="nav-btn" data-view="stock"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7M12 11v10" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>Stock<span id="stockNavBadge"></span></button>
   </nav>
 </div>
 
@@ -789,7 +802,7 @@ const hoyISO=()=>new Date().toISOString().slice(0,10);
 const uid=()=> 't'+Math.random().toString(36).slice(2,9);
 
 let db = loadDB();
-let state = {view:'dashboard', editingId:null, filtro:'Todos', busqueda:''};
+let state = {view:'dashboard', editingId:null, filtro:'Todos', busqueda:'', fecha:''};
 
 function loadDB(){
   let data = localStorage.getItem(DB_KEY);
@@ -928,6 +941,8 @@ function setView(v){
   if(v==='trabajos') renderTrabajos();
   if(v==='vehiculos') renderVehiculos();
  if(v==='mis-trabajos')renderMisTrabajos();
+ if(v==='stock'&&window.Stock)Stock.render();
+ {const fb2=document.getElementById('fabNuevo');if(fb2)fb2.style.display=(v==='stock')?'none':'';}
 }
 
 function contarTrabajosDelMes(trabajos,ref=new Date()){return trabajos.filter(t=>{if(!t||t.deleted)return false;const f=String(t.trabajo?.fechaIngreso||'').trim(),m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(f);if(!m)return false;const d=new Date(f+'T00:00:00');return Number.isFinite(d.getTime())&&Number(m[1])===ref.getFullYear()&&Number(m[2])===ref.getMonth()+1&&d.getDate()===Number(m[3])&&d.getMonth()===ref.getMonth()&&d.getFullYear()===ref.getFullYear();}).length;}
@@ -992,19 +1007,59 @@ function renderItem(t){
 }
 function fmtFecha(iso){ if(!iso) return '-'; const d=new Date(iso+'T00:00:00'); return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'}); }
 
+// Orden de la lista de Trabajos (de arriba hacia abajo). Entregado queda siempre al final.
+// Para invertirlo, dar vuelta este arreglo.
+const ESTADO_ORDEN = ['ingresado','diagn','autoriz','proceso','repuesto','terminad','control','entregad'];
+function rangoEstado(t){
+  const e = estadoVisible(t).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  const i = ESTADO_ORDEN.findIndex(k=>e.includes(k));
+  return i<0 ? -1 : i; // estado desconocido/vacío: arriba, para que se revise
+}
+// Fecha escrita en el buscador: 13/10, 13/10/26, 13-10-2026, 13.10.26
+function fechaDesdeTexto(q){
+  const m = String(q||'').trim().match(/^(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2}|\d{4}))?$/);
+  if(!m) return null;
+  const d=+m[1], mo=+m[2]; if(d<1||d>31||mo<1||mo>12) return null;
+  const y = m[3] ? (m[3].length===2 ? 2000+(+m[3]) : +m[3]) : null;
+  return {d, mo, y};
+}
+function coincideFecha(iso, f){
+  const p = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso||''); if(!p) return false;
+  return (+p[3])===f.d && (+p[2])===f.mo && (f.y==null || (+p[1])===f.y);
+}
 function renderTrabajos(){
   const q = state.busqueda.trim().toLowerCase();
   let list = [...db.trabajos];
-  if(state.filtro!=='Todos') list = list.filter(t=>t.trabajo.estado===state.filtro);
-  if(q){
-    const adminSearch = isAdmin();
-    list = list.filter(t=>
-      t.vehiculo.patente.toLowerCase().includes(q) ||
-      (adminSearch && t.cliente.nombre.toLowerCase().includes(q)) ||
-      (t.trabajo.solicitado||'').toLowerCase().includes(q)
-    );
+  // Búsqueda por fecha de ingreso (selector o escrita en el buscador): muestra todos los estados
+  let fechaSel = null;
+  if(state.fecha){ const [y,mo,d]=state.fecha.split('-').map(Number); fechaSel={d,mo,y}; }
+  else fechaSel = fechaDesdeTexto(state.busqueda);
+  if(fechaSel){
+    list = list.filter(t=>coincideFecha(t.trabajo.fechaIngreso, fechaSel));
+  } else {
+    if(state.filtro!=='Todos') list = list.filter(t=>t.trabajo.estado===state.filtro);
+    if(q){
+      const adminSearch = isAdmin();
+      list = list.filter(t=>
+        t.vehiculo.patente.toLowerCase().includes(q) ||
+        (adminSearch && t.cliente.nombre.toLowerCase().includes(q)) ||
+        (t.trabajo.solicitado||'').toLowerCase().includes(q)
+      );
+    }
   }
-  list.sort((a,b)=> (b.trabajo.fechaIngreso||'').localeCompare(a.trabajo.fechaIngreso||''));
+  // Orden: prioridad de estado y, dentro del mismo estado, ingreso más reciente primero
+  list = list.map(t=>({t, r:rangoEstado(t)}))
+    .sort((a,b)=> (a.r-b.r) || (b.t.trabajo.fechaIngreso||'').localeCompare(a.t.trabajo.fechaIngreso||'') || ((Number(b.t.updatedAt)||0)-(Number(a.t.updatedAt)||0)))
+    .map(x=>x.t);
+  const infoF=$('#fechaInfo'), chipsBox=$('#filtros');
+  if(chipsBox) chipsBox.classList.toggle('chips-off', !!fechaSel);
+  if(infoF){
+    if(fechaSel){
+      const txt=String(fechaSel.d).padStart(2,'0')+'/'+String(fechaSel.mo).padStart(2,'0')+(fechaSel.y?'/'+fechaSel.y:'');
+      infoF.textContent=(list.length===1?'1 coche':list.length+' coches')+' con ingreso el '+txt+' · todos los estados';
+      infoF.style.display='';
+    } else infoF.style.display='none';
+  }
   const lim=state.limit||60; const shown=list.slice(0,lim);
   $('#listaTrabajos').innerHTML = (shown.map(renderItem).join('') + (list.length>lim ? `<button class="btn" id="btnVerMas" style="width:100%;margin:10px 0">Ver más (${list.length-lim} restantes)</button>` : '')) || `<div class="empty">No hay resultados.</div>`;
   const vm=$('#btnVerMas'); if(vm) vm.onclick=()=>{ state.limit=lim+60; renderTrabajos(); };
@@ -1351,7 +1406,9 @@ $('#moTarifa').addEventListener('input',calcTotales);
 $$('.nav-btn').forEach(b=>b.onclick=()=>setView(b.dataset.view));
 
 let _busqTimer; $('#buscador').addEventListener('input',e=>{ state.busqueda=e.target.value; state.limit=60; clearTimeout(_busqTimer); _busqTimer=setTimeout(renderTrabajos,200); });
-$('#btnClearSearch').onclick=()=>{ $('#buscador').value=''; state.busqueda=''; renderTrabajos(); };
+$('#btnClearSearch').onclick=()=>{ $('#buscador').value=''; state.busqueda=''; $('#filtroFecha').value=''; state.fecha=''; renderTrabajos(); };
+$('#filtroFecha').addEventListener('change',e=>{ state.fecha=e.target.value||''; state.limit=60; renderTrabajos(); });
+$('#btnClearFecha').onclick=()=>{ $('#filtroFecha').value=''; state.fecha=''; state.limit=60; renderTrabajos(); };
 $('#filtros').addEventListener('click',e=>{
   if(e.target.classList.contains('chip')){
     $$('#filtros .chip').forEach(c=>c.classList.remove('active'));
@@ -2160,7 +2217,7 @@ let manualWatch=null,manualPoll=null,authEpoch=0;
 const accessDenied=m=>!m||m.active!==true||m.blocked===true;
 function serverTimeout(p){let t;return Promise.race([p,new Promise((_,r)=>t=setTimeout(()=>r(Error('Sin verificación del servidor.')),10000))]).finally(()=>clearTimeout(t));}
 function stopAccessWatch(){if(manualWatch){manualWatch();manualWatch=null;}if(manualPoll){clearInterval(manualPoll);manualPoll=null;}}
-async function closeManualSession(msg){window.tsAuthUi.requiresLogin=true;window.tsAuthUi.ticket++;window.tsAuthUi.login();authEpoch++;stopAccessWatch();try{TSync.stop();}catch(e){}window.currentUser=null;document.querySelectorAll('.modal.open').forEach(e=>e.classList.remove('open'));showLoginForm();checkAuth();setLoginMsg(msg);try{await fb.signOut(fb.auth);}catch(e){console.error(e);}setLoginMsg(msg);}
+async function closeManualSession(msg){window.tsAuthUi.requiresLogin=true;window.tsAuthUi.ticket++;window.tsAuthUi.login();authEpoch++;stopAccessWatch();try{TSync.stop();if(window.Stock)Stock.stop();}catch(e){}window.currentUser=null;document.querySelectorAll('.modal.open').forEach(e=>e.classList.remove('open'));showLoginForm();checkAuth();setLoginMsg(msg);try{await fb.signOut(fb.auth);}catch(e){console.error(e);}setLoginMsg(msg);}
 async function verifyAdminAccess(){const u=fb.auth.currentUser;if(!u||!isAdmin())throw Error('Solo administrador.');const m=await serverTimeout(fb.getDocFromServer(memberDoc(u.uid)));if(!m.exists()||accessDenied(m.data())||m.data().role!=='Admin'||fb.auth.currentUser?.uid!==u.uid)throw Error('Sin autorización.');return u.uid;}
 async function toggleManualBlock(uid){try{const me=await verifyAdminAccess();if(uid===me)throw Error('No podés bloquearte.');const s=await serverTimeout(fb.getDocFromServer(memberDoc(uid)));if(!s.exists())throw Error('Usuario no encontrado.');const m=s.data(),blocked=m.blocked!==true;if(!confirm((blocked?'¿Bloquear':'¿Desbloquear')+' a '+(m.name||m.email)+'?'))return;await fb.updateDoc(memberDoc(uid),{blocked,updatedAt:Date.now(),updatedBy:me});renderUsers();}catch(e){alert(e.message);}}
 
@@ -3557,7 +3614,7 @@ async function iniciarAuth(){
     const accessTicket=window.tsAuthUi.newSession();const attempt=++authEpoch;window.tsAuthUi.begin();window.currentUser=null;stopAccessWatch();document.querySelectorAll('.modal.open').forEach(e=>e.classList.remove('open'));document.getElementById('tour')?.classList.remove('open');state.editingId=null;
     if(!user){
       window.tsAuthUi.login();
-      TSync.stop();
+      TSync.stop();if(window.Stock)Stock.stop();
       window.currentUser = null;
       showLoginForm();
       checkAuth();
@@ -3595,7 +3652,7 @@ async function iniciarAuth(){
     try{await PhotoDisk.restore();}catch(err){console.error(err);alert('No se pudo recuperar la copia local de fotos: '+err.message);}
     tsMark('fotos');
     if(attempt!==authEpoch||accessTicket!==window.tsAuthUi.ticket||!window.currentUser)return;
-    try{const verified=await serverTimeout(rawVerify);tsMark('verif');if(attempt!==authEpoch||accessTicket!==window.tsAuthUi.ticket||fb.auth.currentUser?.uid!==user.uid||!window.currentUser)return;const current=verified.exists()?verified.data():null;if(accessDenied(current)||!['Admin','Mecánico'].includes(current.role)){await closeManualSession('Tu acceso fue bloqueado o deshabilitado.');return;}window.currentUser.role=current.role;window.currentUser.name=current.name||window.currentUser.name;window.currentUser.firstName=current.firstName||'';window.currentUser.lastName=current.lastName||'';init();renderDashboard();renderTrabajos();if(state.view==='mis-trabajos')renderMisTrabajos();aplicarPermisos();if(attempt!==authEpoch||accessTicket!==window.tsAuthUi.ticket||fb.auth.currentUser?.uid!==user.uid)return;tsMark('pantalla');TSync.start();if(window.tsAuthUi.grant(window.currentUser,accessTicket))checkAuth();}catch(err){if(attempt===authEpoch&&accessTicket===window.tsAuthUi.ticket)await closeManualSession('No se pudo preparar el acceso: '+authErrorText(err));}
+    try{const verified=await serverTimeout(rawVerify);tsMark('verif');if(attempt!==authEpoch||accessTicket!==window.tsAuthUi.ticket||fb.auth.currentUser?.uid!==user.uid||!window.currentUser)return;const current=verified.exists()?verified.data():null;if(accessDenied(current)||!['Admin','Mecánico'].includes(current.role)){await closeManualSession('Tu acceso fue bloqueado o deshabilitado.');return;}window.currentUser.role=current.role;window.currentUser.name=current.name||window.currentUser.name;window.currentUser.firstName=current.firstName||'';window.currentUser.lastName=current.lastName||'';init();renderDashboard();renderTrabajos();if(state.view==='mis-trabajos')renderMisTrabajos();aplicarPermisos();if(attempt!==authEpoch||accessTicket!==window.tsAuthUi.ticket||fb.auth.currentUser?.uid!==user.uid)return;tsMark('pantalla');TSync.start();if(window.Stock)Stock.start();if(window.tsAuthUi.grant(window.currentUser,accessTicket))checkAuth();}catch(err){if(attempt===authEpoch&&accessTicket===window.tsAuthUi.ticket)await closeManualSession('No se pudo preparar el acceso: '+authErrorText(err));}
   });
 }
 iniciarAuth();
@@ -3970,7 +4027,129 @@ function cambiarMesCalendario(d){
   paint(); (document.body||document.documentElement).appendChild(box);
 })();
 </script>
+<style>
+.nav-btn{position:relative}
+#stockNavBadge{position:absolute;top:2px;right:calc(50% - 22px);min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#e5484d;color:#fff;font-size:11px;font-weight:900;display:none;align-items:center;justify-content:center;box-sizing:border-box}
+.stk-qty{font-size:24px;font-weight:900;text-align:right;line-height:1}
+.stk-sub{font-size:12px;color:var(--text2);margin-top:3px;overflow-wrap:anywhere}
+.stk-b{display:inline-block;font-size:10px;font-weight:900;padding:3px 7px;border-radius:999px;margin-top:6px;text-transform:uppercase}
+.stk-b.low{background:rgba(234,179,8,.18);color:#fde9a0;border:1px solid rgba(234,179,8,.45)}
+.stk-b.zero{background:rgba(229,72,77,.18);color:#ffb4b6;border:1px solid rgba(229,72,77,.5)}
+#stockSheet{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.72);display:flex;align-items:flex-end;justify-content:center}
+#stockSheet .box{background:var(--card);border:1px solid var(--border);border-radius:18px 18px 0 0;width:100%;max-width:560px;max-height:92vh;overflow-y:auto;padding:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));box-sizing:border-box}
+#stockSheet h3{margin:0 0 12px;font-size:17px}
+.stk-mov{font-size:12px;color:var(--text2);padding:6px 0;border-bottom:1px solid var(--border)}
+</style>
+<script>
+(function(){
+  const COL=()=>fb.collection(fb.dbfs,'talleres',TALLER_ID,'stock');
+  const REF=id=>fb.doc(fb.dbfs,'talleres',TALLER_ID,'stock',id);
+  let unsub=null,items=[],err=null,ready=false,filtro='todos',q='',limit=60,qT,cfg={autoDescuento:false,desde:0},rT,recBusy=false,recAgain=false,pausa=null,forzar=false,lastRec=null;
+  const norm=x=>String(x||'').trim().toLowerCase();
+  const $s=s=>document.querySelector(s);
+  const admin=()=>typeof isAdmin==='function'&&isAdmin();
+  const num=v=>{const n=parseFloat(String(v).replace(',','.'));return Number.isFinite(n)?n:0;};
+  const who=()=>{const u=window.currentUser||{};return u.name||u.email||'—';};
+  const nid=()=>(window.crypto&&crypto.randomUUID)?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+  const falta=i=>Math.max(0,num(i.minimo)-num(i.cantidad));
+  const estado=i=>num(i.cantidad)<=0?'zero':(num(i.minimo)>0&&num(i.cantidad)<=num(i.minimo)?'low':'ok');
+  function errMsg(e){const c=e&&e.code||'';return c==='permission-denied'?'Firebase no permite usar el stock todavía: falta habilitar la colección "stock" en las reglas de Firestore.':'No se pudo guardar/leer el stock ('+(c||(e&&e.message)||'error')+').';}
+  function fail(e){err=e;console.warn('[Stock]',e);render();}
+  function start(){stop();if(!window.fb||!fb.onSnapshot)return;try{unsub=fb.onSnapshot(COL(),snap=>{items=[];cfg={autoDescuento:false,desde:0};snap.docs.forEach(d=>{const x=d.data();if(d.id==='_config'){cfg=Object.assign(cfg,x);return;}if(x.activo!==false)items.push(Object.assign({id:d.id},x));});err=null;ready=true;codes();render();hintsAll();reconcileSoon();},e=>{ready=true;fail(e);});}catch(e){fail(e);}}
+  function stop(){if(unsub){try{unsub();}catch(e){}unsub=null;}items=[];cfg={autoDescuento:false,desde:0};ready=false;err=null;badge();}
+  function badge(){const n=items.filter(i=>estado(i)!=='ok').length,b=$s('#stockNavBadge');if(b){b.textContent=n;b.style.display=n?'flex':'none';}}
+  function write(p){p.catch(e=>{fail(e);});}
+  function render(){
+    badge();const root=$s('#view-stock');if(!root||!root.classList.contains('active'))return;
+    const a=admin(),bajos=items.filter(i=>estado(i)!=='ok');
+    $s('#stockMsg').innerHTML=err?'<div class="card" style="border-color:#e5484d;margin-bottom:10px">'+escHTML(errMsg(err))+'</div>':'';
+    renderAuto();
+    $s('#stockCards').innerHTML='<div class="card"><h3>Repuestos</h3><div class="value">'+items.length+'</div></div><div class="card orange"><h3>Bajo mínimo</h3><div class="value">'+bajos.length+'</div></div>'+(a?'<div class="card" style="grid-column:1/-1"><h3>Valor del stock (costo)</h3><div class="value">'+ars(items.reduce((s,i)=>s+num(i.cantidad)*num(i.costo),0))+'</div></div>':'');
+    $s('#btnStockNuevo').style.display=a?'':'none';$s('#btnStockCompras').style.display=(a&&bajos.length)?'':'none';
+    document.querySelectorAll('#stockChips .chip').forEach(c=>c.classList.toggle('active',c.dataset.f===filtro));
+    const t=q.trim().toLowerCase();
+    let list=items.filter(i=>(filtro==='todos'||(filtro==='bajo'&&estado(i)!=='ok')||(filtro==='cero'&&estado(i)==='zero'))&&(!t||[i.codigo,i.nombre,i.ubicacion,i.proveedor].some(x=>String(x||'').toLowerCase().includes(t))));
+    list.sort((x,y)=>String(x.nombre||'').localeCompare(String(y.nombre||''),'es'));
+    const shown=list.slice(0,limit);
+    $s('#stockList').innerHTML=shown.map(i=>{const e=estado(i);return '<div class="item" data-id="'+escHTML(i.id)+'"><div><div style="font-weight:800">'+escHTML(i.nombre||'(sin nombre)')+'</div><div class="stk-sub">'+(i.codigo?escHTML(i.codigo)+' · ':'')+escHTML(i.ubicacion||'sin ubicación')+(i.proveedor?' · '+escHTML(i.proveedor):'')+'</div>'+(e!=='ok'?'<span class="stk-b '+e+'">'+(e==='zero'?'Sin stock':'Stock bajo · mín. '+num(i.minimo))+'</span>':'')+'</div><div class="stk-qty">'+num(i.cantidad)+'</div></div>';}).join('')+(list.length>limit?'<button class="btn" id="stockMas" style="width:100%;margin:10px 0">Ver más ('+(list.length-limit)+' restantes)</button>':'')||'<div class="empty">'+(ready?(items.length?'No hay resultados.':'Todavía no hay repuestos cargados.'):'Cargando stock…')+'</div>';
+    document.querySelectorAll('#stockList .item').forEach(el=>el.onclick=()=>sheet(items.find(i=>i.id===el.dataset.id)));
+    const m=$s('#stockMas');if(m)m.onclick=()=>{limit+=60;render();};
+  }
 
+  function codes(){let dl=$s('#stockCodesList');if(!dl){dl=document.createElement('datalist');dl.id='stockCodesList';document.body.appendChild(dl);}dl.innerHTML=items.filter(i=>i.codigo).map(i=>'<option value="'+escHTML(i.codigo)+'">'+escHTML(i.nombre||'')+'</option>').join('');}
+  function elegible(){const id=state&&state.editingId;if(!id)return {ok:true,id:null};const t=(db.trabajos||[]).find(x=>x.id===id);if(!t)return {ok:true,id};return {ok:t.createdAt>=cfg.desde||(cfg.incluir||[]).includes(id),id};}
+  function autoDesc(row){if(!row)return;const inp=row.querySelector('.rep-codigo'),d=row.querySelector('.rep-desc');if(!inp||!d||d.disabled||d.readOnly)return;if(d.value.trim()&&d.value!==d.dataset.auto)return;
+    const m=items.filter(i=>norm(i.codigo)===norm(inp.value));if(m.length===1&&m[0].nombre&&d.value!==m[0].nombre){d.value=m[0].nombre;d.dataset.auto=m[0].nombre;d.dispatchEvent(new Event('input',{bubbles:true}));}}
+  function hint(row){if(!row)return;const inp=row.querySelector('.rep-codigo');if(!inp)return;let h=row.querySelector('.stk-hint');if(!h){h=document.createElement('div');h.className='stk-hint';h.style.cssText='grid-column:1/-1;font-size:12px;margin:-2px 0 4px';row.appendChild(h);}
+    const c=norm(inp.value);if(!c||!ready){h.textContent='';return;}const m=items.filter(i=>norm(i.codigo)===c);
+    if(m.length!==1){h.style.color='#9aa6b2';h.textContent=m.length>1?'⚠ Código repetido en el stock':'Código sin stock asociado';return;}
+    const e=elegible(),base='📦 '+escHTML(m[0].nombre)+' · stock: '+num(m[0].cantidad);h.style.color='#7ee2a8';
+    if(!cfg.autoDescuento){h.innerHTML=base+' · descuento automático desactivado';return;}
+    if(e.ok){h.innerHTML=base+' · se descuenta al guardar el trabajo';return;}
+    h.style.color='#fde9a0';h.innerHTML=base+' · este trabajo es anterior a la activación: no se descuenta.'+(admin()?' <button type="button" class="btn btn-sm stk-inc" style="margin-left:6px">Descontar igual</button>':'');
+    const b=h.querySelector('.stk-inc');if(b)b.onclick=()=>{if(confirm('Se van a descontar del stock los repuestos con código de ESTE trabajo. ¿Seguro?'))write(fb.setDoc(REF('_config'),{incluir:fb.arrayUnion(e.id)},{merge:true}));};}
+  function hintsAll(){document.querySelectorAll('#repuestos .rep-row').forEach(hint);}
+  function wanted(){const byCode=new Map(),dup=new Set();items.forEach(i=>{const c=norm(i.codigo);if(!c)return;if(byCode.has(c))dup.add(c);else byCode.set(c,i);});
+    const w=new Map();for(const t of (db.trabajos||[])){if(!t||t.deleted||!(t.createdAt>=cfg.desde||(cfg.incluir||[]).includes(t.id)))continue;for(const r of (t.repuestos||[])){const c=norm(r.codigo),q=Number(r.cantidad)||0;if(!c||!r.repId||q<=0||dup.has(c)||!byCode.has(c))continue;w.set(t.id+':'+r.repId,{sid:byCode.get(c).id,qty:q,label:(t.vehiculo&&t.vehiculo.patente)||''});}}return w;}
+  function applied(it){const m=new Map();(it.movs||[]).forEach(x=>{if(x.ref)m.set(x.ref,(m.get(x.ref)||0)-x.delta);});return m;}
+  function plan(){const w=wanted(),out=new Map(),add=(sid,key,label)=>{if(!out.has(sid))out.set(sid,[]);out.get(sid).push({key,label});};
+    for(const it of items){const ap=applied(it);for(const [key,ya] of ap){const x=w.get(key),want=(x&&x.sid===it.id)?x.qty:0;if(ya!==want)add(it.id,key,x?x.label:'');}}
+    for(const [key,x] of w){const it=items.find(i=>i.id===x.sid);if(it&&!applied(it).has(key))add(x.sid,key,x.label);}return {out,w};}
+  function reconcileSoon(){clearTimeout(rT);rT=setTimeout(reconcile,1500);}
+  async function reconcile(){
+    if(recBusy){recAgain=true;return;}if(!admin()||!cfg.autoDescuento||!ready||err)return;const ts=window.TSync&&TSync._state;if(!ts||!ts.ready)return;
+    recBusy=true;const hechos=[];try{const {out,w}=plan();const n=[...out.values()].reduce((a,l)=>a+l.length,0);
+      if(!n){lastRec={t:Date.now(),n:0};if(pausa!==null)pausa=null;render();return;}
+      if(n>25&&!forzar){pausa=n;render();return;}pausa=null;forzar=false;
+      let res=null;for(const [sid,list] of out){await fb.runTransaction(fb.dbfs,async tx=>{const ref=REF(sid),snap=await tx.get(ref);if(!snap.exists())return;const it=snap.data(),ap=applied(it),nm=[];let delta=0;
+        for(const x of list){const v=w.get(x.key),want=(v&&v.sid===sid)?v.qty:0,diff=want-(ap.get(x.key)||0);if(!diff)continue;delta-=diff;nm.push({id:nid(),t:Date.now(),delta:-diff,motivo:(diff>0?'Trabajo ':'Devuelto del trabajo ')+(x.label||''),por:'Automático',ref:x.key});}
+        if(!nm.length)return;tx.update(ref,{cantidad:num(it.cantidad)+delta,updatedAt:Date.now(),movs:(it.movs||[]).concat(nm)});res=[sid,delta,it.nombre];});if(res)hechos.push(res);res=null;}
+      lastRec={t:Date.now(),n:hechos.length};if(hechos.length)toast('📦 Stock actualizado: '+hechos.map(h=>h[2]+' ('+(h[1]>0?'+':'')+h[1]+')').join(', '));render();
+    }catch(e){console.warn('[Stock] descuento automático',e);}finally{recBusy=false;if(recAgain){recAgain=false;reconcileSoon();}}}
+  function renderAuto(){const el=$s('#stockAuto');if(!el)return;if(!admin()){el.innerHTML='';return;}
+    el.innerHTML='<div class="card" style="margin-bottom:10px"><h3>Descuento automático desde los trabajos</h3><div class="stk-sub" style="margin:0 0 8px">'+(cfg.autoDescuento?'ACTIVADO desde el '+new Date(cfg.desde).toLocaleDateString('es-AR')+'. Descuenta los repuestos cuyo código coincide con el del stock, en trabajos creados desde esa fecha.':'DESACTIVADO. Al activarlo, los repuestos de los trabajos nuevos con código del stock se descuentan solos.')+(cfg.autoDescuento&&lastRec?'<div class="stk-sub" style="margin:0 0 8px">Último control: '+new Date(lastRec.t).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})+(lastRec.n?' · se actualizaron '+lastRec.n+' repuesto(s)':' · sin cambios pendientes')+'</div>':'')+'</div>'+(pausa?'<div class="stk-sub" style="color:#ffb4b6;margin-bottom:8px">Se pausó: detectó '+pausa+' cambios juntos, algo poco habitual. Revisá antes de aplicar.</div><button type="button" class="btn btn-sm" id="stkForzar" style="margin-bottom:8px">Aplicar igual</button> ':'')+'<button type="button" class="btn btn-sm" id="stkAutoBtn">'+(cfg.autoDescuento?'Desactivar':'Activar')+'</button></div>';
+    $s('#stkAutoBtn').onclick=()=>{if(!cfg.autoDescuento){if(!confirm('Se va a descontar stock de los repuestos de trabajos NUEVOS cuyo código coincida con el de un repuesto del stock. Los trabajos anteriores no se tocan. ¿Activar?'))return;write(fb.setDoc(REF('_config'),{autoDescuento:true,desde:cfg.desde||Date.now()},{merge:true}));}
+      else if(confirm('Se deja de descontar automáticamente. Lo ya descontado no se devuelve. ¿Desactivar?'))write(fb.setDoc(REF('_config'),{autoDescuento:false},{merge:true}));};
+    const f=$s('#stkForzar');if(f)f.onclick=()=>{forzar=true;reconcile();};}
+  function toast(msg){let t=$s('#stkToast');if(!t){t=document.createElement('div');t.id='stkToast';t.style.cssText='position:fixed;left:12px;right:12px;bottom:calc(86px + env(safe-area-inset-bottom,0px));z-index:9500;background:#12351f;color:#bff5d3;border:1px solid #2f7a4d;border-radius:12px;padding:10px 12px;font-size:13px;font-weight:700;text-align:center';document.body.appendChild(t);}t.textContent=msg;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>{t.style.display='none';},6000);}
+  function close(){const s=$s('#stockSheet');if(s)s.remove();}
+  function sheet(it){
+    const a=admin(),nuevo=!it;if(nuevo&&!a)return;if(!it)it={};close();
+    const o=document.createElement('div');o.id='stockSheet';
+    const f=(id,l,v,ex)=>'<div class="field"><label>'+l+'</label><input class="input" id="'+id+'" value="'+escHTML(v==null?'':v)+'" '+(ex||'')+(a?'':' disabled')+'></div>';
+    const movs=(it.movs||[]).slice().sort((x,y)=>y.t-x.t).slice(0,10).map(m=>'<div class="stk-mov"><b>'+(m.delta>0?'+':'')+m.delta+'</b> · '+escHTML(m.motivo||'')+' · '+new Date(m.t).toLocaleString('es-AR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+' · '+escHTML(m.por||'')+'</div>').join('');
+    o.innerHTML='<div class="box"><h3>'+(nuevo?'Nuevo repuesto':escHTML(it.nombre||'Repuesto'))+'</h3>'+f('skNombre','Nombre',it.nombre)+'<div class="grid2">'+f('skCodigo','Código',it.codigo)+f('skUbic','Ubicación',it.ubicacion,'placeholder="Estante / cajón"')+'</div><div class="grid2">'+f('skProv','Proveedor',it.proveedor)+f('skMin','Stock mínimo',it.minimo==null?0:it.minimo,'inputmode="decimal"')+'</div>'+(a?f('skCosto','Costo unitario',it.costo==null?'':it.costo,'inputmode="decimal"'):'')+(nuevo?f('skCant','Cantidad inicial',0,'inputmode="decimal"'):'<div class="card" style="margin:6px 0 12px"><h3>Cantidad actual</h3><div class="value">'+num(it.cantidad)+'</div></div>')
+      +(a&&!nuevo?'<div class="section-title" style="margin-top:6px">Ajustar stock</div><div class="grid2"><div class="field"><label>Cantidad</label><input class="input" id="skDelta" inputmode="decimal" placeholder="Ej: 4"></div><div class="field"><label>Motivo</label><select id="skMotivo"><option>Compra / ingreso</option><option>Uso en taller</option><option>Conteo / corrección</option><option>Pérdida / rotura</option><option>Devolución</option></select></div></div><div class="grid2"><button type="button" class="btn btn-primary" id="skSuma">Sumar</button><button type="button" class="btn" id="skResta">Restar</button></div>':'')
+      +(movs?'<div class="section-title">Últimos movimientos</div>'+movs:'')
+      +'<div class="grid2" style="margin-top:14px">'+(a?'<button type="button" class="btn btn-primary" id="skGuardar">'+(nuevo?'Crear':'Guardar datos')+'</button>':'<span></span>')+'<button type="button" class="btn" id="skCerrar">Cerrar</button></div>'+(a&&!nuevo?'<button type="button" class="btn btn-ghost btn-block" id="skArchivar" style="margin-top:10px;color:#ffb4b6">Archivar repuesto</button>':'')+'</div>';
+    document.body.appendChild(o);o.onclick=e=>{if(e.target===o)close();};$s('#skCerrar').onclick=close;
+    const val=id=>($s('#'+id)||{}).value||'';
+    if(a&&$s('#skGuardar'))$s('#skGuardar').onclick=()=>{
+      const nombre=val('skNombre').trim();if(!nombre){alert('Poné el nombre del repuesto.');return;}
+      const d={nombre,codigo:val('skCodigo').trim(),ubicacion:val('skUbic').trim(),proveedor:val('skProv').trim(),minimo:Math.max(0,num(val('skMin'))),costo:Math.max(0,num(val('skCosto'))),updatedAt:Date.now()};
+      if(nuevo){const id=nid(),c=Math.max(0,num(val('skCant')));write(fb.setDoc(REF(id),Object.assign({id,activo:true,cantidad:c,createdAt:Date.now(),movs:c?[{id:nid(),t:Date.now(),delta:c,motivo:'Alta / cantidad inicial',por:who()}]:[]},d)));}
+      else write(fb.updateDoc(REF(it.id),d));
+      close();};
+    const adj=sign=>{const n=num(val('skDelta'));if(!(n>0)){alert('Escribí una cantidad mayor a 0.');return;}const delta=sign*n;
+      if(num(it.cantidad)+delta<0&&!confirm('El stock quedaría en negativo. ¿Seguro?'))return;
+      write(fb.updateDoc(REF(it.id),{cantidad:fb.increment(delta),updatedAt:Date.now(),movs:fb.arrayUnion({id:nid(),t:Date.now(),delta,motivo:val('skMotivo'),por:who()})}));close();};
+    if($s('#skSuma')){$s('#skSuma').onclick=()=>adj(1);$s('#skResta').onclick=()=>adj(-1);}
+    if($s('#skArchivar'))$s('#skArchivar').onclick=()=>{if(confirm('¿Archivar "'+(it.nombre||'')+'"? Deja de aparecer en la lista.')){write(fb.updateDoc(REF(it.id),{activo:false,updatedAt:Date.now()}));close();}};
+  }
+  function compras(){const txt=items.filter(i=>estado(i)!=='ok').map(i=>'- '+(i.codigo?i.codigo+' ':'')+i.nombre+': pedir '+falta(i)+(i.proveedor?' ('+i.proveedor+')':'')).join('\n');
+    (navigator.clipboard?navigator.clipboard.writeText(txt).then(()=>alert('Lista de compras copiada.')):Promise.reject()).catch(()=>alert('Lista de compras:\n\n'+txt));}
+  document.addEventListener('DOMContentLoaded',()=>{
+    const s=$s('#stockSearch');if(s)s.addEventListener('input',e=>{q=e.target.value;limit=60;clearTimeout(qT);qT=setTimeout(render,200);});
+    document.querySelectorAll('#stockChips .chip').forEach(c=>c.onclick=()=>{filtro=c.dataset.f;limit=60;render();});
+    $s('#btnStockNuevo').onclick=()=>sheet(null);$s('#btnStockCompras').onclick=compras;
+    const rr=$s('#repuestos');if(rr)new MutationObserver(hintsAll).observe(rr,{childList:true});
+    document.addEventListener('input',e=>{if(e.target&&e.target.classList&&e.target.classList.contains('rep-codigo')){autoDesc(e.target.closest('.rep-row'));hint(e.target.closest('.rep-row'));}});
+    document.addEventListener('change',e=>{if(e.target&&e.target.classList&&e.target.classList.contains('rep-codigo')){autoDesc(e.target.closest('.rep-row'));hint(e.target.closest('.rep-row'));}});
+    document.addEventListener('focusin',e=>{if(e.target&&e.target.classList&&e.target.classList.contains('rep-codigo')){e.target.setAttribute('list','stockCodesList');hint(e.target.closest('.rep-row'));}});});
+  if(typeof saveLocal==='function'){const o=saveLocal;saveLocal=function(){const r=o.apply(this,arguments);reconcileSoon();return r;};}
+  window.Stock={start,stop,render,reconcile,_items:()=>items,_cfg:()=>cfg};
+})();
+</script>
 <script>
 // Instalable como app: solo cuando se abre desde una dirección web (http/https)
 if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
